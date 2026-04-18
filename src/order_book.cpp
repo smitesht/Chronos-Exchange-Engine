@@ -1,11 +1,12 @@
 #include "order_book.h"
 
 
-Order OrderBook::addOrder(Side side, uint64_t orderId, int64_t price, uint64_t quantity)
+MatchResult OrderBook::addOrder(Side side, uint64_t orderId, int64_t price, uint64_t quantity)
 {
     if(m_Orderlookup.count(orderId))
         throw std::runtime_error("Duplicate orderId");
 
+    MatchResult matchResult;
     Order order;
     order.orderId = orderId;
     order.orderStatus = OrderStatus::New;
@@ -14,6 +15,7 @@ Order OrderBook::addOrder(Side side, uint64_t orderId, int64_t price, uint64_t q
     order.filledQty = 0;
     order.timestamp = nextTimeStamp();
     order.side = side;
+    matchResult.reports.push_back(ExecutionReport{orderId,OrderStatus::New,order.filledQty,order.quantity});
     
     if(side == Side::Buy)
     {
@@ -32,11 +34,13 @@ Order OrderBook::addOrder(Side side, uint64_t orderId, int64_t price, uint64_t q
         m_Orderlookup[orderId] = {side, price, it};
     }
 
-    match();
-    return order;
+    match(matchResult);
+    return matchResult;
 }
 Order OrderBook::modifyOrder(uint64_t orderId, int64_t newPrice, uint64_t newQty)
 {
+    MatchResult matchResult;
+
     // check whether order exist in order lookup
     auto locIt = m_Orderlookup.find(orderId);
 
@@ -69,11 +73,23 @@ Order OrderBook::modifyOrder(uint64_t orderId, int64_t newPrice, uint64_t newQty
             m_asks.erase(loc.price);
     }
 
+    bool priceChanged = (newPrice != existingOrder.price);
+    bool qtyIncreased = (newQty > existingOrder.quantity);
+
+
     // Create updated order
     Order updateOrder = existingOrder;
     updateOrder.price = newPrice;
     updateOrder.quantity = newQty;
-    updateOrder.timestamp = nextTimeStamp();
+    if (priceChanged || qtyIncreased) 
+    {
+        updateOrder.timestamp = nextTimeStamp(); // lose priority
+    } 
+    else 
+    {
+        updateOrder.timestamp = existingOrder.timestamp; // keep priority
+    }
+
 
     // Insert into new price level
     if(loc.side == Side::Buy)
@@ -93,7 +109,7 @@ Order OrderBook::modifyOrder(uint64_t orderId, int64_t newPrice, uint64_t newQty
         loc.orderIt = newIt;
     }
 
-    match();
+    match(matchResult);
     return updateOrder;
     
 }
@@ -133,7 +149,7 @@ void OrderBook::cancelOrder(uint64_t orderId)
     
 }
 
-void OrderBook::match()
+void OrderBook::match(MatchResult& matchResult)
 {
     while(!m_bids.empty() && !m_asks.empty())
     {
@@ -149,16 +165,48 @@ void OrderBook::match()
         Order& buy = buyQueue.front();
         Order& sell = askQueue.front();
 
+        uint64_t buyId = buy.orderId;
+        uint64_t sellId = sell.orderId;
+
         uint64_t remainingBuy = buy.quantity - buy.filledQty;
         uint64_t remainingSell = sell.quantity - sell.filledQty;
 
         uint64_t tradeQty = std::min(remainingBuy, remainingSell);
-
         int64_t tradePrice = askIt->first;
 
+        Trade trade;
+        trade.buyOrderId = buyId;
+        trade.sellOrderId = sellId;
+        trade.price = tradePrice;
+        trade.quantity = tradeQty;
+        matchResult.trades.push_back(trade);
+
+        // Update state
         buy.filledQty += tradeQty;
         sell.filledQty += tradeQty;
 
+        ExecutionReport buyReport{
+            buyId,
+            (buy.filledQty == buy.quantity)
+                ? OrderStatus::Filled : OrderStatus::PartiallyFilled,
+            buy.filledQty,
+            buy.quantity - buy.filledQty
+        };
+
+        ExecutionReport sellReport{
+            sellId,
+            sellReport.orderStatus = (sell.quantity == sell.filledQty) 
+                ? OrderStatus::Filled : OrderStatus::PartiallyFilled,
+            sell.filledQty,
+            sell.quantity - sell.filledQty
+        };
+
+        matchResult.reports.push_back(buyReport);
+        matchResult.reports.push_back(sellReport);
+
+        buy.orderStatus = buyReport.orderStatus;
+        sell.orderStatus = sellReport.orderStatus;
+        
         std::cout << "TRADE "
                   << "Price: " << tradePrice
                   << " Qty: " << tradeQty
@@ -166,31 +214,23 @@ void OrderBook::match()
                   << " SellID: " << sell.orderId
                   << std::endl;
 
+        
         if(buy.filledQty == buy.quantity)
         {
-            buy.orderStatus = OrderStatus::Filled;
             m_Orderlookup.erase(buy.orderId);
             buyQueue.pop_front();
             if(buyQueue.empty())
                 m_bids.erase(bidIt);
         }
-        else
-        {
-            buy.orderStatus = OrderStatus::PartiallyFilled;
-        }
-
+        
         if(sell.filledQty == sell.quantity)
         {
-            sell.orderStatus = OrderStatus::Filled;
             m_Orderlookup.erase(sell.orderId);
             askQueue.pop_front();
             if(askQueue.empty())
                 m_asks.erase(askIt);
         }
-        else
-        {
-            sell.orderStatus = OrderStatus::PartiallyFilled;
-        }
+        
     }
 }
 

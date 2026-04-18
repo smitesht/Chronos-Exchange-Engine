@@ -6,6 +6,7 @@
 #include <iostream>
 #include <unordered_map>
 #include "order_model.h"
+#include "order_execution_report.h"
 
 using OrderQueue = std::deque<Order>;
 using BidBook = std::map<int64_t,OrderQueue,std::greater<int64_t>>;
@@ -37,12 +38,12 @@ private:
             o.orderStatus == OrderStatus::PartiallyFilled;
     }
 
-    void match();
+    void match(MatchResult& matchResult);
 
 public:
     OrderBook():m_globalTimeStamp(0) {}
 
-    Order addOrder(Side side,uint64_t orderId, int64_t price, uint64_t quantity);
+    MatchResult addOrder(Side side,uint64_t orderId, int64_t price, uint64_t quantity);
     Order modifyOrder( uint64_t orderId,  int64_t newPrice, uint64_t newQty);
     void cancelOrder( uint64_t orderId);
 };
