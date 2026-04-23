@@ -12,4 +12,6 @@ add_executable(main
                 src/order_book.cpp
                 src/order_model.h
                 src/order_request.h
-                src/order_execution_report.h)
+                src/order_execution_report.h
+                src/matching_engine.cpp
+                )

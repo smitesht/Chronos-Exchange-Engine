@@ -37,7 +37,9 @@ MatchResult OrderBook::addOrder(Side side, uint64_t orderId, int64_t price, uint
     match(matchResult);
     return matchResult;
 }
-Order OrderBook::modifyOrder(uint64_t orderId, int64_t newPrice, uint64_t newQty)
+
+
+MatchResult  OrderBook::modifyOrder(uint64_t orderId, int64_t newPrice, uint64_t newQty)
 {
     MatchResult matchResult;
 
@@ -49,13 +51,16 @@ Order OrderBook::modifyOrder(uint64_t orderId, int64_t newPrice, uint64_t newQty
     
     // if exist get the location in the bids/aks
     auto& loc = locIt->second;
-    Order& existingOrder = *(loc.orderIt);
+    Order existingOrder = *(loc.orderIt);
 
     if(!isActive(existingOrder))
         throw std::runtime_error("Cannot modify inactive order");
 
     if(newQty < existingOrder.filledQty)
         throw std::runtime_error("New quantity less than already filled");
+
+    if (newPrice <= 0)
+        throw std::runtime_error("Invalid price");
 
     // Remove from old price level
     if(loc.side == Side::Buy)
@@ -73,14 +78,14 @@ Order OrderBook::modifyOrder(uint64_t orderId, int64_t newPrice, uint64_t newQty
             m_asks.erase(loc.price);
     }
 
-    bool priceChanged = (newPrice != existingOrder.price);
-    bool qtyIncreased = (newQty > existingOrder.quantity);
-
-
     // Create updated order
     Order updateOrder = existingOrder;
     updateOrder.price = newPrice;
     updateOrder.quantity = newQty;
+
+    bool priceChanged = (newPrice != existingOrder.price);
+    bool qtyIncreased = (newQty > existingOrder.quantity);
+
     if (priceChanged || qtyIncreased) 
     {
         updateOrder.timestamp = nextTimeStamp(); // lose priority
@@ -90,6 +95,11 @@ Order OrderBook::modifyOrder(uint64_t orderId, int64_t newPrice, uint64_t newQty
         updateOrder.timestamp = existingOrder.timestamp; // keep priority
     }
 
+    // keep status based on filledQty
+    updateOrder.orderStatus =
+        (updateOrder.filledQty == updateOrder.quantity)
+            ? OrderStatus::Filled
+            : (updateOrder.filledQty > 0 ? OrderStatus::PartiallyFilled : OrderStatus::New);
 
     // Insert into new price level
     if(loc.side == Side::Buy)
@@ -109,11 +119,21 @@ Order OrderBook::modifyOrder(uint64_t orderId, int64_t newPrice, uint64_t newQty
         loc.orderIt = newIt;
     }
 
+    // Execution report
+    ExecutionReport report;
+    report.orderId = updateOrder.orderId;
+    report.orderStatus = updateOrder.orderStatus;
+    report.filledQty = updateOrder.filledQty;
+    report.remainingQty = updateOrder.quantity - updateOrder.filledQty;
+
+    matchResult.reports.push_back(report);
+
     match(matchResult);
-    return updateOrder;
+    return matchResult;
     
 }
-void OrderBook::cancelOrder(uint64_t orderId)
+
+ExecutionReport OrderBook::cancelOrder(uint64_t orderId)
 {
     // Check order exist or not
     auto locIt = m_Orderlookup.find(orderId);
@@ -127,6 +147,9 @@ void OrderBook::cancelOrder(uint64_t orderId)
 
     if(!isActive(order))
         throw std::runtime_error("Cannot cancel inactive order");
+
+    uint64_t filled = order.filledQty;
+    uint64_t remaining = order.quantity - order.filledQty;
 
     order.orderStatus = OrderStatus::Cancelled;
 
@@ -146,6 +169,14 @@ void OrderBook::cancelOrder(uint64_t orderId)
     }
 
     m_Orderlookup.erase(locIt);
+
+    ExecutionReport report;
+    report.orderId = order.orderId;
+    report.filledQty = filled;
+    report.remainingQty = remaining;
+    report.orderStatus = OrderStatus::Cancelled;
+
+    return report;
     
 }
 
@@ -207,12 +238,12 @@ void OrderBook::match(MatchResult& matchResult)
         buy.orderStatus = buyReport.orderStatus;
         sell.orderStatus = sellReport.orderStatus;
         
-        std::cout << "TRADE "
+        /*std::cout << "TRADE "
                   << "Price: " << tradePrice
                   << " Qty: " << tradeQty
                   << " BuyID: " << buy.orderId
                   << " SellID: " << sell.orderId
-                  << std::endl;
+                  << std::endl;*/
 
         
         if(buy.filledQty == buy.quantity)

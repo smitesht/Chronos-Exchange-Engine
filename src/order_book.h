@@ -44,6 +44,6 @@ public:
     OrderBook():m_globalTimeStamp(0) {}
 
     MatchResult addOrder(Side side,uint64_t orderId, int64_t price, uint64_t quantity);
-    Order modifyOrder( uint64_t orderId,  int64_t newPrice, uint64_t newQty);
-    void cancelOrder( uint64_t orderId);
+    MatchResult modifyOrder( uint64_t orderId,  int64_t newPrice, uint64_t newQty);
+    ExecutionReport cancelOrder( uint64_t orderId);
 };
