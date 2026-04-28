@@ -1,9 +1,9 @@
 #include <iostream>
 #include <random>
-#include "src/order_book.h"
-#include "src/order_execution_report.h"
-#include "src/matching_engine.h"
-#include "src/order_request.h"
+#include "../include/orderbook/order_book.h"
+#include "../include/common/order_execution_report.h"
+#include "../include/engine/matching_engine.h"
+#include "../include/common/order_request.h"
 
 using std::cout;
 
@@ -38,7 +38,8 @@ int main()
         {
             std::cout << "REPORT "
                       << er.orderId << " "
-                      << static_cast<int>(er.orderStatus) << " "
+                      //<< static_cast<int>(er.orderStatus) << " "
+                      << ExecutionReport::toStringOrderStatus(er.orderStatus) << " "
                       << er.filledQty << " "
                       << er.remainingQty << std::endl;
         }
