@@ -4,13 +4,14 @@
 #include "../include/common/order_execution_report.h"
 #include "../include/engine/matching_engine.h"
 #include "../include/common/order_request.h"
+#include "../include/gateway/order_gateway.h"
 
 using std::cout;
 
 int main()
 {
 
-    std::random_device rd;
+   /* std::random_device rd;
     std::mt19937 gen(rd());
 
     std::uniform_int_distribution<> sideDist(0, 1);
@@ -56,7 +57,10 @@ int main()
 
         std::cout << "------------------------\n";
 
-    }
+    }*/
+
+    OrderGateway gateway;
+    gateway.start(3030);
 
     return 0;
 }
